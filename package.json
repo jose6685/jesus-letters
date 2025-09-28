@@ -1,0 +1,63 @@
+{
+  "name": "jesus-letters-3.0",
+  "version": "3.0.0",
+  "description": "耶穌的信 3.0 - AI屬靈陪伴應用程序",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "server": "node server/index.js",
+    "server:dev": "nodemon server/index.js",
+    "capacitor:add": "npx cap add",
+    "capacitor:sync": "npx cap sync",
+    "capacitor:run": "npx cap run",
+    "capacitor:build": "npm run build && npx cap sync",
+    "android": "npm run capacitor:build && npx cap run android",
+    "ios": "npm run capacitor:build && npx cap run ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/app": "^6.0.2",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/device": "^6.0.2",
+    "@capacitor/haptics": "^6.0.2",
+    "@capacitor/ios": "^6.0.0",
+    "@capacitor/keyboard": "^6.0.0",
+    "@capacitor/share": "^6.0.3",
+    "@capacitor/splash-screen": "^6.0.3",
+    "@capacitor/status-bar": "^6.0.0",
+    "@capacitor/toast": "^6.0.3",
+    "@google/generative-ai": "^0.21.0",
+    "cors": "^2.8.5",
+    "docx": "^8.5.0",
+    "dotenv": "^17.2.2",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.1",
+    "helmet": "^7.2.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^2.5.2",
+    "morgan": "^1.10.1",
+    "openai": "^4.67.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.0.0",
+    "@vitejs/plugin-vue": "^5.1.4",
+    "nodemon": "^3.1.7",
+    "typescript": "^5.9.2",
+    "vite": "^5.4.10",
+    "vue": "^3.5.12"
+  },
+  "keywords": [
+    "jesus",
+    "christian",
+    "ai",
+    "spiritual",
+    "prayer",
+    "bible",
+    "capacitor",
+    "pwa"
+  ],
+  "author": "Jesus Letters Team",
+  "license": "MIT"
+}

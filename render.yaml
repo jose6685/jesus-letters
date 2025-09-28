@@ -1,0 +1,30 @@
+services:
+  # 後端服務（Node.js）
+  - type: web
+    name: jesus-letters-backend
+    env: node
+    buildCommand: npm ci
+    startCommand: node server/app.js
+    autoDeploy: true
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # 在 Render 儀表板中設定以下密鑰（不直接放值）
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      # 可選：在部署後填入靜態站點的域名（逗號分隔）
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+  # 前端靜態站
+  - type: static
+    name: jesus-letters-frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    # 部署後需要在 Render 儀表板中設定 VITE_API_BASE_URL 指向後端URL
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false
