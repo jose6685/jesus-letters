@@ -1,9 +1,12 @@
 // @ts-nocheck
+const fs = require('fs')
+const path = require('path')
+
 /**
  * 簡化版 AI 服務
  * 專注於核心功能，提供穩定的 AI 回應生成
  */
-class SimplifiedAIService {
+export default class SimplifiedAIService {
   constructor() {
     this.apiKey = process.env.OPENAI_API_KEY
     this.baseURL = 'https://api.openai.com/v1/chat/completions'
@@ -12,7 +15,29 @@ class SimplifiedAIService {
     this.maxRetries = 3
     this.timeout = 30000
     
+    // 載入外部提示文件
+    this.loadPromptFiles()
+    
     console.log('🤖 SimplifiedAIService 初始化完成')
+  }
+
+  /**
+   * 載入外部提示文件內容
+   */
+  loadPromptFiles() {
+    try {
+      const aiPromptsPath = path.join(__dirname, '../../AI_Prompts_Detailed.md')
+      const prayerPromptsPath = path.join(__dirname, '../../Prayer_Prompts_Detailed.md')
+      
+      this.aiPrompts = fs.existsSync(aiPromptsPath) ? fs.readFileSync(aiPromptsPath, 'utf8') : ''
+      this.prayerPrompts = fs.existsSync(prayerPromptsPath) ? fs.readFileSync(prayerPromptsPath, 'utf8') : ''
+      
+      console.log('✅ 成功載入外部提示文件')
+    } catch (error) {
+      console.warn('⚠️ 載入外部提示文件失敗:', error.message)
+      this.aiPrompts = ''
+      this.prayerPrompts = ''
+    }
   }
 
   /**
@@ -103,7 +128,10 @@ class SimplifiedAIService {
   buildPrompt(userInput) {
     const { nickname, topic, situation } = userInput
     
-    return `你是一位聖經數據分析專家，擁有來自基督教網站和聖經應用程式的知識庫。你的任務是以耶穌的身份回應用戶的需求。
+    // 使用載入的外部提示文件內容
+    const basePrompt = this.aiPrompts || `你是一位聖經數據分析專家，擁有來自基督教網站和聖經應用程式的知識庫。你的任務是以耶穌的身份回應用戶的需求。`
+    
+    const enhancedPrompt = `${basePrompt}
 
 **重要：細節關注原則**
 - 仔細閱讀用戶輸入中的每一個細節，特別是：
@@ -169,7 +197,8 @@ guidedPrayer 必須涵蓋：
 暱稱：${nickname}
 主題：${topic}
 情況：${situation}`;
-    }
+
+    return enhancedPrompt
   }
 
   /**
@@ -565,9 +594,9 @@ guidedPrayer 必須涵蓋：
 3. 关系医治：主啊，求你修理${nickname}生命中的破裂关系，带来和好与复和。
 4. 属性灵医治：圣灵啊，求你复兴${nickname}的灵性，让他/她与你的关系更加亲密。
 
-天父，你知道我们内心深处的需要，即使我们没有说出口的重担，你都看见
+天父，你知道我们内心深处的需要，即使我们没有说出口的重担，你都看见。
 
-求你的平安如江河一般流淌在我們心中，让我们在风暴中仍能经历你的同在。求你按着你在耶穌里 的应许，成就在我们身上。
+求你的平安如江河一般流淌在我們心中，让我们在风暴中仍能经历你的同在。求你按着你在耶穌里的应许，成就在我们身上。
 
 主啊，我们将这一切都交托在你的手中，相信你必有最好的安排。求你继续引導和保守我们，让我们在每一天都能感受到你的爱。
 
@@ -575,10 +604,10 @@ guidedPrayer 必須涵蓋：
 
       biblicalReferences: [
         '马太福音 11:28 - 凡劳苦担重担的人可以到我这里来，我就使你们得安息。【历史背景】耶穌向跟随着的人发出邀请。【实际应用】当我们在感到疲憊时，可以来到耶穌面前得到真正的安息。',
-        '诗篇 23:1 - 耶和華是我的牧者，我必不致缺乏。【历史背景】大David王写的诗篇，表达对神的信心靠。【实际应用】神会像牧羊人一样照顾我们的每一个需要。',
-        '腓立比书 4:13 - 我靠著那给给我力量的，凡事都能做。【历史背景】保罗在监狱中写给腓立比教会的人。【实际应用】通过基督，我们能够面对生命中的各种挑战。',
-        '以賽亚书 41:10 - 你不要害怕，是因为我与你同在；不要惊惶，是因为我是你的神。【历史背景】神对被擄归回的以色列民们的安慰。【实际应用】在面临未知时，神的同在是我们的最大的安慰。',
-        '羅馬書 8:28 - 萬事都互相效力，叫愛神的人受益。【历史背景】保羅闡述神的救恩计划。【实际应用】神能使用生命中的每个经历來成就祂的美意。'
+        '诗篇 23:1 - 耶和華是我的牧者，我必不致缺乏。【历史背景】大衛王写的诗篇，表达对神的信心。【实际应用】神会像牧羊人一样照顾我们的每一个需要。',
+        '腓立比书 4:13 - 我靠著那加给我力量的，凡事都能做。【历史背景】保罗在监狱中写给腓立比教会的信。【实际应用】通过基督，我们能够面对生命中的各种挑战。',
+        '以賽亚书 41:10 - 你不要害怕，因为我与你同在；不要惊惶，因为我是你的神。【历史背景】神对被擄归回的以色列民的安慰。【实际应用】在面临未知时，神的同在是我们最大的安慰。',
+        '羅馬書 8:28 - 萬事都互相效力，叫愛神的人得益處。【历史背景】保羅闡述神的救恩计划。【实际应用】神能使用生命中的每个经历來成就祂的美意。'
       ],
 
       coreMessage: '神愛你，祂必與你同在，永不離棄你。',
@@ -600,5 +629,3 @@ guidedPrayer 必須涵蓋：
     return Math.random().toString(36).substr(2, 9)
   }
 }
-
-module.exports = SimplifiedAIService
