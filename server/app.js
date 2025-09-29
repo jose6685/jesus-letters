@@ -39,8 +39,19 @@ app.use(helmet({
 
 // CORS配置（支援以環境變數 ALLOWED_ORIGINS 覆蓋生產環境允許來源，逗號分隔）
 const allowedOriginsEnv = process.env.ALLOWED_ORIGINS
-const defaultProdOrigins = ['https://your-domain.com', 'https://your-app.netlify.app']
-const devOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000', 'http://localhost:3001', 'http://localhost:4173']
+const defaultProdOrigins = [
+  'https://your-domain.com', 
+  'https://your-app.netlify.app',
+  'https://jesus-letters-3-tb724zmns-jose6685-6249s-projects.vercel.app'
+]
+const devOrigins = [
+  'http://localhost:5173', 
+  'http://127.0.0.1:5173', 
+  'http://localhost:3000', 
+  'http://localhost:3001', 
+  'http://localhost:4173',
+  'https://jesus-letters-3-tb724zmns-jose6685-6249s-projects.vercel.app'
+]
 const allowedOrigins = process.env.NODE_ENV === 'production'
   ? (allowedOriginsEnv ? allowedOriginsEnv.split(',').map(s => s.trim()).filter(Boolean) : defaultProdOrigins)
   : devOrigins
@@ -156,15 +167,6 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('❌ 未處理的Promise拒絕:', reason)
   console.error('Promise:', promise)
   process.exit(1)
-})
-
-// 啟動服務器
-const server = app.listen(PORT, () => {
-  console.log(`🚀 耶穌的信 3.0 API服務器運行在端口 ${PORT}`)
-  console.log(`📍 環境: ${process.env.NODE_ENV || 'development'}`)
-  console.log(`🌐 本地訪問: http://localhost:${PORT}`)
-  console.log(`📊 健康檢查: http://localhost:${PORT}/api/health`)
-  console.log(`🤖 AI服務: http://localhost:${PORT}/api/ai/generate`)
 })
 
 export default app
