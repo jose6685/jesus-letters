@@ -2,16 +2,16 @@
 export const API_CONFIG = {
   // 後端API基礎URL - 根據環境自動選擇
   BASE_URL: (() => {
-    // 優先使用環境變數，指向 Render 後端
+    // 在 Vite 開發模式下，統一使用相對路徑以走代理，避免 CORS
+    const isDev = !!import.meta.env.DEV
+    if (isDev) {
+      return '/api'
+    }
+
+    // 生產或非開發環境：優先使用環境變數
     const envBase = (import.meta.env.VITE_API_BASE_URL || '').trim()
     if (envBase) {
       return envBase.endsWith('/api') ? envBase : `${envBase}/api`
-    }
-
-    // 本地開發環境
-    const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname)
-    if (isLocal) {
-      return 'http://localhost:3002/api'
     }
 
     // 其他情況：同域後端（若存在）

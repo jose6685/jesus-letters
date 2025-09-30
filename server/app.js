@@ -142,23 +142,6 @@ app.use('*', (req, res) => {
 app.use(notFoundHandler)
 app.use(globalErrorHandler)
 
-// 優雅關閉處理
-process.on('SIGTERM', () => {
-  console.log('🛑 收到SIGTERM信號，正在優雅關閉服務器...')
-  server.close(() => {
-    console.log('✅ 服務器已關閉')
-    process.exit(0)
-  })
-})
-
-process.on('SIGINT', () => {
-  console.log('🛑 收到SIGINT信號，正在優雅關閉服務器...')
-  server.close(() => {
-    console.log('✅ 服務器已關閉')
-    process.exit(0)
-  })
-})
-
 // 未捕獲的異常處理
 process.on('uncaughtException', (error) => {
   console.error('❌ 未捕獲的異常:', error)

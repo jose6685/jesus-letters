@@ -228,11 +228,11 @@ export default {
           .map(ref => {
             if (typeof ref === 'string') return ref.trim()
             const text = (ref && (ref.text || ref.content)) ? (ref.text || ref.content) : ''
-            const reference = ref && (ref.reference || ref.ref) ? (ref.reference || ref.ref) : ''
+            const reference = ref && (ref.verse || ref.reference || ref.ref) ? (ref.verse || ref.reference || ref.ref) : ''
             const combined = [reference, text].filter(Boolean).join(' - ')
             return combined.trim()
           })
-          .filter(ref => ref && ref.length > 0)
+          .filter(ref => ref && ref.length > 0 && !ref.includes('請查閱聖經獲取完整經文'))
       }
 
       // 若為字串：嘗試JSON解析，否則以常見分隔符分割
@@ -241,15 +241,20 @@ export default {
           const parsed = JSON.parse(references)
           if (Array.isArray(parsed)) {
             return parsed
-              .map(r => (typeof r === 'string' ? r.trim() : JSON.stringify(r)))
-              .filter(r => r && r.length > 0)
+              .map(r => {
+                if (typeof r === 'string') return r.trim()
+                const text = (r && (r.text || r.content)) ? (r.text || r.content) : ''
+                const reference = r && (r.verse || r.reference || r.ref) ? (r.verse || r.reference || r.ref) : ''
+                return [reference, text].filter(Boolean).join(' - ').trim()
+              })
+              .filter(r => r && r.length > 0 && !r.includes('請查閱聖經獲取完整經文'))
           }
         } catch (e) {
           // 使用換行/頓號/逗號/分號等分隔
           return references
             .split(/(?:\r?\n|[、，,；;]+)+/)
             .map(ref => ref.trim())
-            .filter(ref => ref.length > 0)
+            .filter(ref => ref.length > 0 && !ref.includes('請查閱聖經獲取完整經文'))
         }
       }
 

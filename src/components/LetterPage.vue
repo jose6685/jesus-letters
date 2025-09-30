@@ -222,30 +222,41 @@ export default {
         .join('')
     }
 
-    // 經文標準化：避免字串被逐字渲染
+    // 經文標準化：將物件型引用轉為「出處 - 內容」，並過濾占位文字
     const normalizeRefs = (refs) => {
       if (!refs) return []
+      // 陣列：元素可能是字串或物件
       if (Array.isArray(refs)) {
         return refs
-          .map(r => (typeof r === 'string' ? r.trim() : String(r)))
-          .filter(Boolean)
+          .map(r => {
+            if (typeof r === 'string') return r.trim()
+            const verse = r?.verse || r?.reference || r?.ref || ''
+            const text = r?.text || r?.content || ''
+            const combined = [verse, text].filter(Boolean).join(' - ').trim()
+            return combined
+          })
+          .filter(entry => entry && !entry.includes('請查閱聖經獲取完整經文'))
       }
+      // 字串：嘗試 JSON 解析；否則以常見分隔符拆分
       if (typeof refs === 'string') {
-        // 嘗試 JSON 解析
         try {
           const parsed = JSON.parse(refs)
           if (Array.isArray(parsed)) {
             return parsed
-              .map(r => (typeof r === 'string' ? r.trim() : String(r)))
-              .filter(Boolean)
+              .map(r => {
+                if (typeof r === 'string') return r.trim()
+                const verse = r?.verse || r?.reference || r?.ref || ''
+                const text = r?.text || r?.content || ''
+                return [verse, text].filter(Boolean).join(' - ').trim()
+              })
+              .filter(entry => entry && !entry.includes('請查閱聖經獲取完整經文'))
           }
         } catch (_) {}
-        // 以常見分隔符拆分
         return refs
           .replace(/\r\n/g, '\n')
           .split(/[\n,;、，；]+/)
           .map(s => s.trim())
-          .filter(Boolean)
+          .filter(entry => entry && !entry.includes('請查閱聖經獲取完整經文'))
       }
       return []
     }

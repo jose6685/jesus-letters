@@ -1,13 +1,14 @@
 import app from './app.js'
 
 const PORT = process.env.PORT || 3002
+const HOST = process.env.HOST || '127.0.0.1'
 
-// 啟動伺服器
-const server = app.listen(PORT, () => {
-  console.log(`🚀 後端服務器已啟動在端口 ${PORT}`)
-  console.log(`📡 API端點: http://localhost:${PORT}/api`)
-  console.log(`🏥 健康檢查: http://localhost:${PORT}/api/health`)
-  console.log(`🤖 AI服務: http://localhost:${PORT}/api/ai`)
+// 啟動伺服器（綁定至明確主機，避免本機連線問題）
+const server = app.listen(PORT, HOST, () => {
+  console.log(`🚀 後端服務器已啟動在 ${HOST}:${PORT}`)
+  console.log(`📡 API端點: http://${HOST}:${PORT}/api`)
+  console.log(`🏥 健康檢查: http://${HOST}:${PORT}/api/health`)
+  console.log(`🤖 AI服務: http://${HOST}:${PORT}/api/ai`)
 })
 
 // 優雅關閉
