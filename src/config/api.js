@@ -2,12 +2,20 @@
 export const API_CONFIG = {
   // 後端API基礎URL - 根據環境自動選擇
   BASE_URL: (() => {
-    // 如果是Vercel部署環境
-    if (window.location.hostname.includes('vercel.app')) {
-      return `${window.location.origin}/api`
+    // 優先使用環境變數，指向 Render 後端
+    const envBase = (import.meta.env.VITE_API_BASE_URL || '').trim()
+    if (envBase) {
+      return envBase.endsWith('/api') ? envBase : `${envBase}/api`
     }
-    // 開發環境或其他環境
-    return import.meta.env.VITE_API_BASE_URL || 'http://localhost:3002/api'
+
+    // 本地開發環境
+    const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+    if (isLocal) {
+      return 'http://localhost:3002/api'
+    }
+
+    // 其他情況：同域後端（若存在）
+    return `${window.location.origin}/api`
   })(),
   
   // API端點
