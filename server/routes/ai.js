@@ -83,21 +83,48 @@ class BackendAIService {
    */
   async loadPromptFiles() {
     try {
-      const aiPromptsPath = path.join(process.cwd(), 'AI_Prompts_Detailed.md')
-      const prayerPromptsPath = path.join(process.cwd(), 'Prayer_Prompts_Detailed.md')
-      
-      if (fs.existsSync(aiPromptsPath)) {
-        this.aiPrompts = fs.readFileSync(aiPromptsPath, 'utf8')
-        console.log('✅ AI提示詞文件載入成功')
-      } else {
-        console.warn('⚠️ AI提示詞文件不存在:', aiPromptsPath)
+      // 主提示詞候選路徑（依序嘗試）
+      const aiCandidates = [
+        path.join(process.cwd(), 'AI_Prompts_Detailed.md'),
+        path.join(process.cwd(), 'Prompt_Usage_Guidelines.md'),
+        path.join(process.cwd(), 'README_Prompts.md'),
+        path.join(process.cwd(), 'PRD_JesusLetter.md')
+      ]
+
+      let aiLoadedPath = null
+      for (const p of aiCandidates) {
+        if (fs.existsSync(p)) {
+          this.aiPrompts = fs.readFileSync(p, 'utf8')
+          aiLoadedPath = p
+          break
+        }
       }
-      
-      if (fs.existsSync(prayerPromptsPath)) {
-        this.prayerPrompts = fs.readFileSync(prayerPromptsPath, 'utf8')
-        console.log('✅ 禱告提示詞文件載入成功')
+      if (aiLoadedPath) {
+        console.log(`✅ AI提示詞文件載入成功: ${aiLoadedPath}`)
       } else {
-        console.warn('⚠️ 禱告提示詞文件不存在:', prayerPromptsPath)
+        console.warn('⚠️ 未找到任何AI提示詞文件，將使用內建最小化提示')
+        this.aiPrompts = ''
+      }
+
+      // 禱告提示詞候選路徑（依序嘗試）
+      const prayerCandidates = [
+        path.join(process.cwd(), 'Prayer_Prompts_Detailed.md'),
+        path.join(process.cwd(), 'README_Prompts.md')
+      ]
+
+      let prayerLoadedPath = null
+      for (const p of prayerCandidates) {
+        if (fs.existsSync(p)) {
+          this.prayerPrompts = fs.readFileSync(p, 'utf8')
+          prayerLoadedPath = p
+          break
+        }
+      }
+      if (prayerLoadedPath) {
+        console.log(`✅ 禱告提示詞文件載入成功: ${prayerLoadedPath}`)
+      } else {
+        console.warn('⚠️ 未找到任何禱告提示詞文件，將使用內建最小化提示')
+        this.prayerPrompts = ''
       }
     } catch (error) {
       console.error('❌ 載入提示詞文件失敗:', error)
