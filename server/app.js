@@ -42,7 +42,8 @@ const allowedOriginsEnv = process.env.ALLOWED_ORIGINS
 const defaultProdOrigins = [
   'https://your-domain.com', 
   'https://your-app.netlify.app',
-  'https://jesus-letters-3-tb724zmns-jose6685-6249s-projects.vercel.app'
+  'https://jesus-letters-3-tb724zmns-jose6685-6249s-projects.vercel.app',
+  'https://jesus-letters-3-git-main-jose6685-6249s-projects.vercel.app'
 ]
 const devOrigins = [
   'http://localhost:5173', 
@@ -50,7 +51,8 @@ const devOrigins = [
   'http://localhost:3000', 
   'http://localhost:3001', 
   'http://localhost:4173',
-  'https://jesus-letters-3-tb724zmns-jose6685-6249s-projects.vercel.app'
+  'https://jesus-letters-3-tb724zmns-jose6685-6249s-projects.vercel.app',
+  'https://jesus-letters-3-git-main-jose6685-6249s-projects.vercel.app'
 ]
 const allowedOrigins = process.env.NODE_ENV === 'production'
   ? (allowedOriginsEnv ? allowedOriginsEnv.split(',').map(s => s.trim()).filter(Boolean) : defaultProdOrigins)

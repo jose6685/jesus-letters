@@ -1,7 +1,14 @@
 // API配置
 export const API_CONFIG = {
-  // 後端API基礎URL
-  BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3002/api',
+  // 後端API基礎URL - 根據環境自動選擇
+  BASE_URL: (() => {
+    // 如果是Vercel部署環境
+    if (window.location.hostname.includes('vercel.app')) {
+      return `${window.location.origin}/api`
+    }
+    // 開發環境或其他環境
+    return import.meta.env.VITE_API_BASE_URL || 'http://localhost:3002/api'
+  })(),
   
   // API端點
   ENDPOINTS: {
