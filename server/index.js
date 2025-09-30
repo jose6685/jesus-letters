@@ -4,9 +4,10 @@ const PORT = process.env.PORT || 3002
 
 // 對於Vercel部署，直接導出app
 if (process.env.VERCEL) {
+  // Vercel環境：直接導出app
   export default app
 } else {
-  // 本地開發環境
+  // 其他環境（本地開發、Render等）：啟動服務器
   const server = app.listen(PORT, () => {
     console.log(`🚀 後端服務器已啟動在端口 ${PORT}`)
     console.log(`📡 API端點: http://localhost:${PORT}/api`)
@@ -31,5 +32,6 @@ if (process.env.VERCEL) {
     })
   })
 
+  // 導出server實例
   export default server
 }
