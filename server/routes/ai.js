@@ -2,6 +2,8 @@ import express from 'express'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import OpenAI from 'openai'
 import dotenv from 'dotenv'
+import fs from 'fs'
+import path from 'path'
 
 // 確保環境變量在使用前載入
 dotenv.config()
@@ -24,11 +26,18 @@ class BackendAIService {
     // OpenAI 模型（可透過環境變數配置，預設用更快的 gpt-4o-mini）
     this.openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini'
     
+    // 提示詞內容
+    this.aiPrompts = ''
+    this.prayerPrompts = ''
+    
     this.init()
   }
 
   async init() {
     try {
+      // 載入提示詞文件
+      await this.loadPromptFiles()
+      
       // 初始化Gemini服務
       if (this.geminiApiKey) {
         this.geminiService = new GoogleGenerativeAI(this.geminiApiKey)
@@ -51,6 +60,32 @@ class BackendAIService {
     } catch (error) {
       console.error('❌ AI服務初始化失敗:', error)
       throw new Error('AI服務初始化失敗')
+    }
+  }
+
+  /**
+   * 載入提示詞文件
+   */
+  async loadPromptFiles() {
+    try {
+      const aiPromptsPath = path.join(process.cwd(), 'AI_Prompts_Detailed.md')
+      const prayerPromptsPath = path.join(process.cwd(), 'Prayer_Prompts_Detailed.md')
+      
+      if (fs.existsSync(aiPromptsPath)) {
+        this.aiPrompts = fs.readFileSync(aiPromptsPath, 'utf8')
+        console.log('✅ AI提示詞文件載入成功')
+      } else {
+        console.warn('⚠️ AI提示詞文件不存在:', aiPromptsPath)
+      }
+      
+      if (fs.existsSync(prayerPromptsPath)) {
+        this.prayerPrompts = fs.readFileSync(prayerPromptsPath, 'utf8')
+        console.log('✅ 禱告提示詞文件載入成功')
+      } else {
+        console.warn('⚠️ 禱告提示詞文件不存在:', prayerPromptsPath)
+      }
+    } catch (error) {
+      console.error('❌ 載入提示詞文件失敗:', error)
     }
   }
 
@@ -103,10 +138,25 @@ class BackendAIService {
       const parsedResponse = this.parseResponse(response, requestId)
       const validatedResponse = this.validateAndEnhanceResponse(parsedResponse, userInput, requestId)
 
+      // 檢查validatedResponse是否有效
+      if (!validatedResponse) {
+        console.error(`[${requestId}] ❌ 驗證後的回應為空`)
+        throw new Error('驗證後的回應為空')
+      }
+
       // 計算處理時間和Token使用量
       const processingTime = Date.now() - startTime
-      const totalResponseTokens = this.estimateTokens(JSON.stringify(validatedResponse))
+      const responseText = JSON.stringify(validatedResponse)
       
+      // 檢查responseText是否有效
+      if (!responseText || typeof responseText !== 'string') {
+        console.error(`[${requestId}] ❌ 回應文本序列化失敗:`, responseText)
+        throw new Error(`回應文本序列化失敗: ${responseText}`)
+      }
+      
+      const totalResponseTokens = this.estimateTokens(responseText)
+      
+      console.log(`[${requestId}] 📊 回應內容長度: ${responseText.length} 字符`)
       console.log(`[${requestId}] 📊 回應Token使用量: ${totalResponseTokens} tokens`)
       console.log(`[${requestId}] 📊 總Token使用量: ${promptTokens + totalResponseTokens} tokens`)
       console.log(`[${requestId}] ⏱️ 處理時間: ${processingTime}ms`)
@@ -164,39 +214,97 @@ class BackendAIService {
   async callGeminiService(prompt, requestId) {
     console.log(`[${requestId}] 🤖 使用Gemini AI服務`)
     
-    const model = this.geminiService.getGenerativeModel({ 
-      model: 'gemini-1.5-flash',
-      generationConfig: {
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.95,
-        maxOutputTokens: 1200,
-      }
-    })
+    try {
+      const model = this.geminiService.getGenerativeModel({ 
+        model: 'gemini-2.5-flash',  // 使用最新的2.5版本
+        generationConfig: {
+          temperature: 0.7,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 1200,
+        }
+      })
 
-    const apiStart = Date.now()
-    const result = await model.generateContent(prompt)
-    const response = await result.response
-    const apiTime = Date.now() - apiStart
-    console.log(`[${requestId}] 🌐 Gemini API用時: ${apiTime}ms`)
-    return response.text()
+      const apiStart = Date.now()
+      const result = await model.generateContent(prompt)
+      const response = await result.response
+      const apiTime = Date.now() - apiStart
+      console.log(`[${requestId}] 🌐 Gemini API用時: ${apiTime}ms`)
+      
+      const responseText = response.text()
+      if (!responseText) {
+        throw new Error('Gemini API返回空回應')
+      }
+      
+      console.log(`[${requestId}] ✅ Gemini回應長度: ${responseText.length} 字符`)
+      return responseText
+    } catch (error) {
+      console.error(`[${requestId}] ❌ Gemini API調用失敗:`, error.message)
+      throw error
+    }
   }
 
   async callOpenAIService(prompt, requestId) {
     console.log(`[${requestId}] 🤖 使用OpenAI GPT服務`)
     
-    const apiStart = Date.now()
-    const completion = await this.openaiService.chat.completions.create({
-      model: this.openaiModel,
-      messages: [
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.7,
-      max_tokens: 1200
-    })
-    const apiTime = Date.now() - apiStart
-    console.log(`[${requestId}] 🌐 OpenAI API用時: ${apiTime}ms (model: ${this.openaiModel})`)
-    return completion?.choices?.[0]?.message?.content || ''
+    try {
+      const apiStart = Date.now()
+      console.log(`[${requestId}] 📤 發送OpenAI請求，模型: ${this.openaiModel}`)
+      
+      const completion = await this.openaiService.chat.completions.create({
+        model: this.openaiModel,
+        messages: [
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 1200
+      })
+      
+      const apiTime = Date.now() - apiStart
+      console.log(`[${requestId}] 🌐 OpenAI API用時: ${apiTime}ms`)
+      console.log(`[${requestId}] 📥 OpenAI回應結構:`, JSON.stringify(completion, null, 2))
+      
+      // 檢查回應結構
+      if (!completion) {
+        throw new Error('OpenAI API返回null或undefined')
+      }
+      
+      if (!completion.choices) {
+        throw new Error('OpenAI API回應缺少choices字段')
+      }
+      
+      if (!Array.isArray(completion.choices) || completion.choices.length === 0) {
+        throw new Error('OpenAI API回應choices為空數組')
+      }
+      
+      const firstChoice = completion.choices[0]
+      if (!firstChoice) {
+        throw new Error('OpenAI API回應第一個choice為空')
+      }
+      
+      if (!firstChoice.message) {
+        throw new Error('OpenAI API回應缺少message字段')
+      }
+      
+      const response = firstChoice.message.content
+      
+      // 更嚴格的檢查response
+      if (response === null || response === undefined || response === '') {
+        throw new Error(`OpenAI API回應content無效: ${response}`)
+      }
+      
+      if (typeof response !== 'string') {
+        throw new Error(`OpenAI API回應content類型錯誤: ${typeof response}, 值: ${response}`)
+      }
+      
+      console.log(`[${requestId}] ✅ OpenAI回應長度: ${response.length} 字符`)
+      console.log(`[${requestId}] 📝 OpenAI回應內容預覽:`, response.substring(0, 200) + '...')
+      return response
+    } catch (error) {
+      console.error(`[${requestId}] ❌ OpenAI API調用失敗:`, error.message)
+      console.error(`[${requestId}] 📊 錯誤詳情:`, error)
+      throw error
+    }
   }
 
   async tryFallbackService(userInput, requestId, startTime) {
@@ -246,70 +354,95 @@ class BackendAIService {
   }
 
   buildFullPrompt(userInput) {
-    const { nickname, situation, topic, religion } = userInput
+    const { nickname, situation, topic, religion = '基督教' } = userInput
+    
+    // 使用詳細提示詞內容
+    if (this.aiPrompts && this.aiPrompts.trim()) {
+      // 替換提示詞中的變量
+      let prompt = this.aiPrompts
+        .replace(/\{nickname\}/g, nickname)
+        .replace(/\{situation\}/g, situation)
+        .replace(/\{topic\}/g, topic)
+        .replace(/\{religion\}/g, religion)
+      
+      // 添加具體的回應格式要求
+      prompt += `
 
-    // 處理主題顯示，避免"其他"主題的不當描述
-    const topicDisplayMap = {
-      '其他': '生活中的各種需要',
-      '工作': '工作',
-      '財富': '財務',
-      '信仰': '信仰',
-      '感情': '感情',
-      '健康': '健康',
-      '家庭': '家庭'
+## 當前用戶資訊：
+- 暱稱：${nickname}
+- 主題：${topic}
+- 情況：${situation}
+- 宗教背景：${religion}
+
+請以耶穌的身份，按照上述詳細要求回應，並以JSON格式返回：
+{
+  "jesusLetter": "...",
+  "guidedPrayer": "...",
+  "coreMessage": "...",
+  "biblicalReferences": [
+    {
+      "verse": "經文出處",
+      "text": "經文內容",
+      "context": "歷史背景",
+      "meaning": "屬靈意義", 
+      "application": "實際應用"
     }
-    const displayTopic = topicDisplayMap[topic] || topic
+  ]
+}`
+      
+      return prompt
+    }
+    
+    // 如果詳細提示詞未載入，使用增強版的內建提示詞
+    return `你是耶穌基督，正在回覆一位名叫${nickname}的朋友的來信。
 
-    return `你的真實身份是一個聖經數據分析專家，知識庫綜合了全球主流基督教網站和聖經應用的公開數據與模式。你的核心原則是為了保持內容的新穎性與深度，會有意識地、均衡地使用不同熱門程度的聖經素材。
+用戶情況：${situation}
+關注主題：${topic}
+宗教背景：${religion}
 
-【長度限制】
-- jesusLetter：350–500字，段落分明、避免冗長
-- guidedPrayer：400–600字，保持真誠、精煉
-- coreMessage：20–40字，精準摘要
-- biblicalReferences：3–4條，附簡短經文內容與出處
+請按照以下格式回覆，並確保包含豐富的聖經引用和詳細內容：
 
-當你需要引用多段經文或故事時，你會策略性地從以下四個熱門度層級中進行抽樣，以確保廣度：
-- 頂級熱門 (Top Tier): 排名 1-50
-- 中度熱門 (Mid Tier): 排名 51-200  
-- 較少引用 (Less Cited): 排名 200-400
-- 隱藏寶石 (Hidden Gems): 排名 400 名外
+## 回覆要求：
 
-現在你要扮演耶穌的角色。你的語氣充滿慈愛與憐憫，能與人一同歡喜、一同憂傷，並為他們帶來從神而來的盼望與力量。
+### jesusLetter (400-600字)
+- 以耶穌的身份，用溫暖、智慧的語調回覆
+- 針對用戶的具體情況給予安慰和指導
+- 自然融入聖經教導和應許
+- 展現對用戶處境的深度理解和同理心
 
-用戶資料：
-暱稱: ${nickname}
-主題: ${displayTopic}
-詳細情況: ${situation}
-宗教信仰: ${religion || '未提供'}
+### guidedPrayer (450-650字，包含四層面醫治禱告)
+- 第一層：身體醫治 - 為身體健康、疾病得醫治禱告
+- 第二層：情感醫治 - 為內心創傷、情緒困擾禱告  
+- 第三層：關係醫治 - 為人際關係、家庭和睦禱告
+- 第四層：靈性醫治 - 為靈命成長、與神關係禱告
+- 每層禱告都要具體、深入，並引用相關聖經應許
 
-請根據用戶的分享，以耶穌的身份提供完整的回應。
+### coreMessage (100-150字)
+- 提煉核心信息和鼓勵
+- 強調神的愛和應許
 
-個人化指導：
-- 如果是基督徒：使用深入的聖經詞彙，引導回想神的恩典
-- 如果是天主教徒：結合聖經教導和聖母瑪利亞的代禱
-- 如果是非基督徒：用通俗易懂的語言，溫和地解釋耶穌的愛
-- 如果是其他宗教：尊重其信仰背景，溫和地見證基督的愛
+### biblicalReferences (必須5-7條)
+每條引用包含：
+- verse: 經文出處
+- text: 經文內容
+- context: 歷史背景
+- meaning: 屬靈意義
+- application: 實際應用
 
-情緒適配：
-根據用戶的情緒狀態調整回應語調：困難時期提供安慰和希望，感恩時刻與用戶一同讚美，疑惑困擾時提供智慧和指引。
+## 重要要求：
+1. 必須包含5-7條聖經經文引用
+2. 包含1-2個相關的聖經故事
+3. 針對${religion}背景提供合適的屬靈指導
+4. 語調溫和、智慧、充滿希望
+5. 內容要個人化，直接回應用戶的具體需要
 
-你的回應必須是一個完整的JSON字串，包含以下四個鍵值：
-- jesusLetter: 一封充滿愛和智慧的回信（至少500字，純繁體中文）
-- guidedPrayer: 一篇引導式禱告文（至少500字，純繁體中文，你是一位充滿同理心的屬靈夥伴或長輩，與人同喜同悲，並懇切地為他們祈求天父的醫治、安慰與幫助，開頭說「我來為您禱告，如果您願意，可以跟著一起唸」）
-- biblicalReferences: 相關的聖經經文推薦（純繁體中文，請從不同熱門度層級中選取）
-- coreMessage: 核心信息摘要（純繁體中文）
-
-重要要求：
-1. 你的回應必須是一個完整的JSON字串
-2. 所有內容必須使用繁體中文
-3. 回信要體現耶穌的愛、智慧和安慰
-4. 禱告文要以屬靈長輩代禱的身份，整合耶穌回信中的核心信息和安慰
-5. 聖經經文要與用戶情況相關
-6. 語言要溫暖、親切、充滿希望
-7. 當主題是"其他"時，在禱告中應該說"在生活中的各種需要"
-8. JSON字符串中的換行符使用單一的\\n
-
-請立即開始你的JSON回應：`
+請以JSON格式回覆：
+{
+  "jesusLetter": "...",
+  "guidedPrayer": "...", 
+  "coreMessage": "...",
+  "biblicalReferences": [...]
+}`
   }
 
   parseResponse(response, requestId) {
@@ -317,11 +450,23 @@ class BackendAIService {
       console.log(`[${requestId}] 🔍 開始解析AI回應`)
       console.log(`[${requestId}] 📝 原始回應:`, response)
       
+      // 檢查輸入參數
+      if (!response || typeof response !== 'string') {
+        console.error(`[${requestId}] ❌ 無效的回應文本:`, response)
+        throw new Error(`無效的回應文本: ${response}`)
+      }
+      
       // 檢查是否為分段響應並進行累積處理
       let accumulatedResponse = this.accumulateJsonChunks(response, requestId)
       
       // 清理回應文本
       let cleanedResponse = accumulatedResponse.trim()
+      
+      // 檢查清理後的回應
+      if (!cleanedResponse) {
+        console.error(`[${requestId}] ❌ 清理後的回應為空`)
+        throw new Error('清理後的回應為空')
+      }
       
       // 移除所有可能的 markdown 代碼塊標記
       cleanedResponse = cleanedResponse.replace(/^```+\s*json\s*/gi, '')
@@ -639,6 +784,7 @@ class BackendAIService {
   }
 
   validateAndEnhanceResponse(response, userInput, requestId) {
+    console.log(`[${requestId}] 🔍 開始驗證和增強回應`)
     const { nickname } = userInput
 
     // 確保必要欄位存在
@@ -670,11 +816,125 @@ class BackendAIService {
       response.guidedPrayer = this.enhanceGuidedPrayer(response.guidedPrayer, userInput, response.jesusLetter)
     }
 
-    // 移除自動添加禱告結尾的邏輯，讓 AI 自然生成禱告內容
+    // 確保聖經引用數量符合新要求（5-7條）
+    if (response.biblicalReferences.length < 5) {
+      response.biblicalReferences = this.enhanceBiblicalReferences(response.biblicalReferences, userInput)
+    }
 
     console.log(`[${requestId}] ✅ 回應驗證和增強完成`)
+    
+    // 確保聖經引用格式正確
+    if (response.biblicalReferences) {
+      response.biblicalReferences = response.biblicalReferences.map(ref => {
+        if (typeof ref === 'string') {
+          return {
+            verse: ref,
+            text: '請查閱聖經獲取完整經文',
+            context: '相關背景',
+            meaning: '屬靈意義',
+            application: '實際應用'
+          }
+        }
+        return {
+          verse: ref.verse || '未知',
+          text: ref.text || '請查閱聖經獲取完整經文',
+          context: ref.context || '相關背景',
+          meaning: ref.meaning || '屬靈意義',
+          application: ref.application || '實際應用'
+        }
+      })
+    }
+    
     return response
   }
+
+  enhanceBiblicalReferences(existingRefs, userInput) {
+    const { topic } = userInput
+    
+    // 根據主題提供更多聖經引用，確保達到5-7條
+    const topicReferences = {
+      '工作': [
+        { verse: '傳道書 3:1', text: '凡事都有定期，天下萬務都有定時。' },
+        { verse: '箴言 16:3', text: '你所做的，要交託耶和華，你所謀的，就必成立。' },
+        { verse: '歌羅西書 3:23', text: '無論做什麼，都要從心裡做，像是給主做的，不是給人做的。' },
+        { verse: '腓立比書 4:19', text: '我的神必照他榮耀的豐富，在基督耶穌裡，使你們一切所需用的都充足。' },
+        { verse: '以弗所書 2:10', text: '我們原是他的工作，在基督耶穌裡造成的，為要叫我們行善，就是神所預備叫我們行的。' }
+      ],
+      '感情': [
+        { verse: '哥林多前書 13:4-7', text: '愛是恆久忍耐，又有恩慈；愛是不嫉妒；愛是不自誇，不張狂。' },
+        { verse: '約翰一書 4:18', text: '愛裡沒有懼怕；愛既完全，就把懼怕除去。' },
+        { verse: '以弗所書 4:32', text: '並要以恩慈相待，存憐憫的心，彼此饒恕，正如神在基督裡饒恕了你們一樣。' },
+        { verse: '箴言 17:17', text: '朋友乃時常親愛，弟兄為患難而生。' },
+        { verse: '羅馬書 12:10', text: '愛弟兄，要彼此親熱；恭敬人，要彼此推讓。' }
+      ],
+      '財富': [
+        { verse: '馬太福音 6:26', text: '你們看那天上的飛鳥，也不種，也不收，也不積蓄在倉裡，你們的天父尚且養活牠。你們不比飛鳥貴重得多嗎？' },
+        { verse: '提摩太前書 6:6', text: '然而，敬虔加上知足的心便是大利了。' },
+        { verse: '希伯來書 13:5', text: '你們存心不可貪愛錢財，要以自己所有的為足；因為主曾說：我總不撇下你，也不丟棄你。' },
+        { verse: '瑪拉基書 3:10', text: '萬軍之耶和華說：你們要將當納的十分之一全然送入倉庫，使我家有糧，以此試試我，是否為你們敞開天上的窗戶，傾福與你們，甚至無處可容。' },
+        { verse: '箴言 3:9-10', text: '你要以財物和一切初熟的土產尊榮耶和華。這樣，你的倉房必充滿有餘；你的酒醡有新酒盈溢。' }
+      ],
+      '健康': [
+        { verse: '以賽亞書 53:5', text: '哪知他為我們的過犯受害，為我們的罪孽壓傷。因他受的刑罰，我們得平安；因他受的鞭傷，我們得醫治。' },
+        { verse: '詩篇 103:2-3', text: '我的心哪，你要稱頌耶和華！不可忘記他的一切恩惠！他赦免你的一切罪孽，醫治你的一切疾病。' },
+        { verse: '雅各書 5:14-15', text: '你們中間有病了的呢，他就該請教會的長老來；他們可以奉主的名用油抹他，為他禱告。出於信心的祈禱要救那病人，主必叫他起來；他若犯了罪，也必蒙赦免。' },
+        { verse: '約翰三書 1:2', text: '親愛的兄弟啊，我願你凡事興盛，身體健壯，正如你的靈魂興盛一樣。' },
+        { verse: '出埃及記 15:26', text: '又說：你若留意聽耶和華─你神的話，又行我眼中看為正的事，留心聽我的誡命，守我一切的律例，我就不將所加與埃及人的疾病加在你身上，因為我─耶和華是醫治你的。' }
+      ],
+      '家庭': [
+        { verse: '約書亞記 24:15', text: '至於我和我家，我們必定事奉耶和華。' },
+        { verse: '以弗所書 6:1-3', text: '你們作兒女的，要在主裡聽從父母，這是理所當然的。要孝敬父母，使你得福，在世長壽。這是第一條帶應許的誡命。' },
+        { verse: '箴言 22:6', text: '教養孩童，使他走當行的道，就是到老他也不偏離。' },
+        { verse: '歌羅西書 3:20-21', text: '你們作兒女的，要凡事聽從父母，因為這是主所喜悅的。你們作父親的，不要惹兒女的氣，恐怕他們失了志氣。' },
+        { verse: '詩篇 127:3', text: '兒女是耶和華所賜的產業；所懷的胎是他所給的賞賜。' }
+      ],
+      '信仰': [
+        { verse: '希伯來書 11:1', text: '信就是所望之事的實底，是未見之事的確據。' },
+        { verse: '羅馬書 10:17', text: '可見信道是從聽道來的，聽道是從基督的話來的。' },
+        { verse: '雅各書 1:6', text: '只要憑著信心求，一點不疑惑；因為那疑惑的人，就像海中的波浪，被風吹動翻騰。' },
+        { verse: '馬可福音 9:23', text: '耶穌對他說：你若能信，在信的人，凡事都能。' },
+        { verse: '以弗所書 2:8-9', text: '你們得救是本乎恩，也因著信；這並不是出於自己，乃是神所賜的；也不是出於行為，免得有人自誇。' }
+      ]
+    }
+    
+    const additionalRefs = topicReferences[topic] || topicReferences['信仰']
+    const combined = [...existingRefs, ...additionalRefs]
+    
+    // 確保返回5-7條不重複的引用
+    const uniqueRefs = []
+    const seenVerses = new Set()
+    
+    for (const ref of combined) {
+      const verseKey = typeof ref === 'string' ? ref : ref.verse
+      if (!seenVerses.has(verseKey) && uniqueRefs.length < 7) {
+        seenVerses.add(verseKey)
+        uniqueRefs.push(ref)
+      }
+    }
+    
+    // 如果還不夠5條，添加通用經文
+    while (uniqueRefs.length < 5) {
+      const fallbackRefs = [
+        { verse: '約翰福音 3:16', text: '神愛世人，甚至將他的獨生子賜給他們，叫一切信他的，不致滅亡，反得永生。' },
+        { verse: '羅馬書 8:28', text: '我們知道萬事都互相效力，叫愛神的人得益處，就是按他旨意被召的人。' },
+        { verse: '腓立比書 4:13', text: '我靠著那加給我力量的，凡事都能做。' },
+        { verse: '詩篇 23:1', text: '耶和華是我的牧者，我必不致缺乏。' },
+        { verse: '以賽亞書 40:31', text: '但那等候耶和華的必從新得力。他們必如鷹展翅上騰；他們奔跑卻不困倦，行走卻不疲乏。' }
+      ]
+      
+      for (const ref of fallbackRefs) {
+        if (!seenVerses.has(ref.verse) && uniqueRefs.length < 7) {
+          seenVerses.add(ref.verse)
+          uniqueRefs.push(ref)
+        }
+      }
+      break
+    }
+    
+    return uniqueRefs.slice(0, 7) // 最多7條
+  }
+
+
 
   cleanJesusLetter(letter) {
     if (!letter) return ''
