@@ -4,7 +4,7 @@ services:
     name: jesus-letters-backend
     env: node
     buildCommand: npm ci
-    startCommand: node server/app.js
+    startCommand: node server/index.js
     autoDeploy: true
     healthCheckPath: /api/health
     envVars:
