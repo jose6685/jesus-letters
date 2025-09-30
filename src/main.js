@@ -7,6 +7,7 @@ import { createApp } from 'vue';
 import App from './App.vue';
 import capacitorService from './services/CapacitorService.js';
 import pwaService from './services/PWAService.js';
+import { API_CONFIG, aiAPI } from './config/api.js';
 
 // 創建Vue應用實例
 const app = createApp(App);
@@ -14,8 +15,8 @@ const app = createApp(App);
 // 全局初始化狀態標記
 window.__APP_INITIALIZED__ = window.__APP_INITIALIZED__ || false;
 
-// 從環境變數取得 API 基礎 URL
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3002';
+// 使用統一的 API 配置
+const API_BASE_URL = API_CONFIG.BASE_URL;
 
 /**
  * 發送 AI 生成請求
@@ -23,17 +24,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3002
  */
 const generateAI = async (payload) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/ai/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP 錯誤 ${response.status}`);
-    }
-
-    return await response.json();
+    return await aiAPI.generate(payload);
   } catch (error) {
     console.error('🚫 AI 請求失敗:', error);
     throw error;
