@@ -120,6 +120,25 @@
         </div>
       </form>
 
+      <!-- 錯誤提示與重試引導 -->
+      <div v-if="errorState.visible" class="error-panel">
+        <div class="error-header">發送失敗</div>
+        <p class="error-message">{{ errorState.message || '系統暫時不可用，請稍後重試。' }}</p>
+        <div class="error-meta">
+          <span>請求ID：{{ errorState.requestId || '無' }}</span>
+          <span v-if="errorState.code">錯誤代碼：{{ errorState.code }}</span>
+        </div>
+        <div class="error-actions">
+          <button class="btn-primary" @click="retrySubmit" :disabled="isSubmitting">重試一次</button>
+          <button class="btn-secondary" @click="checkAIStatus">檢查系統狀態</button>
+        </div>
+        <div v-if="statusInfo" class="status-info">
+          <div>OpenAI：{{ statusInfo.checks?.openai?.available ? '可用' : '不可用' }}（模型：{{ statusInfo.openaiModel }}）</div>
+          <div>Gemini：{{ statusInfo.checks?.gemini?.available ? '可用' : '不可用' }}（模型：gemini-2.5-flash）</div>
+          <div>初始化：{{ statusInfo.initialized ? '是' : '否' }}</div>
+        </div>
+      </div>
+
       <!-- 隱私提示 -->
       <div class="privacy-notice">
         <div class="notice-icon">🔒</div>
@@ -141,6 +160,8 @@ export default {
   emits: ['letter-sent', 'back'],
   setup(props, { emit }) {
     const isSubmitting = ref(false)
+    const errorState = ref({ visible: false, message: '', code: '', requestId: '' })
+    const statusInfo = ref(null)
     
     const formData = ref({
       nickname: '',
@@ -182,11 +203,15 @@ export default {
           body: JSON.stringify(requestData)
         })
 
+        let result
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
+          let errJson = null
+          try { errJson = await response.json() } catch {}
+          setErrorFromResponse(response.status, errJson)
+          throw new Error(`AI生成失敗: HTTP ${response.status}`)
+        } else {
+          result = await response.json()
         }
-
-        const result = await response.json()
 
         // 從正確的數據結構中提取AI響應
         const aiResponse = result.data.aiResponse
@@ -209,12 +234,37 @@ export default {
 
         // 重置表單
         resetForm()
+        errorState.value = { visible: false, message: '', code: '', requestId: '' }
 
       } catch (error) {
         console.error('發送信件失敗:', error)
-        alert('發送失敗，請檢查網絡連接後重試')
+        if (!errorState.value.visible) {
+          errorState.value = { visible: true, message: '系統暫時不可用，請稍後重試。', code: '', requestId: '' }
+        }
       } finally {
         isSubmitting.value = false
+      }
+    }
+
+    const setErrorFromResponse = (status, errJson) => {
+      const msg = errJson?.message || errJson?.error || `HTTP ${status}`
+      const code = errJson?.code || ''
+      const requestId = errJson?.requestId || ''
+      errorState.value = { visible: true, message: msg, code, requestId }
+    }
+
+    const retrySubmit = async () => {
+      if (isSubmitting.value) return
+      await handleSubmit()
+    }
+
+    const checkAIStatus = async () => {
+      try {
+        const resp = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.AI_STATUS}?deep=true`)
+        const json = await resp.json()
+        statusInfo.value = json.data
+      } catch (e) {
+        statusInfo.value = { error: '無法獲取狀態' }
       }
     }
 
@@ -286,8 +336,12 @@ export default {
       isSubmitting,
       isFormValid,
       handleSubmit,
+      retrySubmit,
+      checkAIStatus,
       handleBack,
-      processBiblicalReferences
+      processBiblicalReferences,
+      errorState,
+      statusInfo
     }
   }
 }
@@ -526,6 +580,45 @@ textarea {
   font-size: 0.9rem;
   color: var(--text-secondary);
   line-height: 1.4;
+}
+
+.error-panel {
+  background: rgba(244, 67, 54, 0.08);
+  border: 1px solid rgba(244, 67, 54, 0.3);
+  border-radius: var(--border-radius);
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.error-header {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #f44336;
+  margin-bottom: 0.25rem;
+}
+
+.error-message {
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.error-meta {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
+.error-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.status-info {
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
 }
 
 /* 響應式設計 */

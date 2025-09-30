@@ -33,6 +33,21 @@ class BackendAIService {
     this.init()
   }
 
+  logAI(event, requestId, payload = {}) {
+    try {
+      const entry = {
+        type: 'AI_LOG',
+        event,
+        requestId,
+        timestamp: new Date().toISOString(),
+        payload
+      }
+      console.log(JSON.stringify(entry))
+    } catch (e) {
+      console.log(`[${requestId}] ${event}`, payload)
+    }
+  }
+
   async init() {
     try {
       // 載入提示詞文件
@@ -97,11 +112,12 @@ class BackendAIService {
     const requestId = this.generateRequestId()
     const startTime = Date.now()
     
-    console.log(`[${requestId}] 🚀 開始處理AI請求`)
-    console.log(`[${requestId}] 📝 用戶輸入:`, {
+    this.logAI('request_start', requestId, {
       nickname: userInput.nickname,
       topic: userInput.topic,
-      situationLength: userInput.situation?.length || 0
+      situationLength: userInput.situation?.length || 0,
+      preferredService: this.preferredService,
+      openaiModel: this.openaiModel
     })
     
     try {
@@ -110,12 +126,11 @@ class BackendAIService {
       let promptTokens = this.estimateTokens(fullPrompt)
       console.log(`[${requestId}] 📊 提示詞Token使用量: ${promptTokens} tokens`)
 
-      // 當提示詞過長時，改用緊湊版提示詞以降低延遲
-      if (promptTokens > 800) {
-        console.log(`[${requestId}] ⚠️ 提示詞過長(${promptTokens} tokens)，改用緊湊版提示詞`)
+      // 當提示詞極長時，才改用緊湊版提示詞（再提高門檻以優先使用詳細提示）
+      // 移除舊緊湊提示詞：不再切換到緊湊版，始終使用最小化上下文
+      if (false) {
         const compactPrompt = this.buildCompactPrompt(userInput)
         const compactTokens = this.estimateTokens(compactPrompt)
-        console.log(`[${requestId}] 📊 緊湊提示Token使用量: ${compactTokens} tokens`)
         fullPrompt = compactPrompt
         promptTokens = compactTokens
       }
@@ -127,9 +142,11 @@ class BackendAIService {
       if (this.preferredService === 'gemini' && this.geminiService) {
         response = await this.callGeminiService(fullPrompt, requestId)
         usedService = 'gemini'
+        this.logAI('service_selected', requestId, { selected: usedService })
       } else if (this.preferredService === 'openai' && this.openaiService) {
-        response = await this.callOpenAIService(fullPrompt, requestId)
+        response = await this.callOpenAIService(fullPrompt, requestId, userInput)
         usedService = 'openai'
+        this.logAI('service_selected', requestId, { selected: usedService })
       } else {
         throw new Error('首選AI服務不可用')
       }
@@ -156,11 +173,16 @@ class BackendAIService {
       
       const totalResponseTokens = this.estimateTokens(responseText)
       
-      console.log(`[${requestId}] 📊 回應內容長度: ${responseText.length} 字符`)
-      console.log(`[${requestId}] 📊 回應Token使用量: ${totalResponseTokens} tokens`)
-      console.log(`[${requestId}] 📊 總Token使用量: ${promptTokens + totalResponseTokens} tokens`)
-      console.log(`[${requestId}] ⏱️ 處理時間: ${processingTime}ms`)
-      console.log(`[${requestId}] ✅ AI處理完成`)
+      this.logAI('response_success', requestId, {
+        aiService: usedService,
+        responseLength: responseText.length,
+        tokenUsage: {
+          prompt: promptTokens,
+          response: totalResponseTokens,
+          total: promptTokens + totalResponseTokens
+        },
+        processingTime
+      })
 
       return {
         ...validatedResponse,
@@ -177,8 +199,12 @@ class BackendAIService {
       }
 
     } catch (error) {
-      console.error(`[${requestId}] ❌ 首選服務失敗:`, error.message)
-      
+      this.logAI('service_error', requestId, {
+        preferredService: this.preferredService,
+        errorMessage: error.message,
+        errorName: error.name,
+        errorCode: error.code
+      })
       // 嘗試備用服務
       return await this.tryFallbackService(userInput, requestId, startTime)
     }
@@ -189,26 +215,25 @@ class BackendAIService {
     const { nickname = '朋友', topic = '愛與盼望', situation = '', religion } = userInput || {}
     const displayTopic = topic === '其他' ? '生活中的各種需要' : topic
 
-    return `你是耶穌，以溫柔、真誠、盼望的口吻回應。請僅輸出完整的JSON字串，所有內容使用繁體中文，換行使用單一的\\n。
+    // 從使用者情境中萃取需被明確點名覆蓋的細節（極簡關鍵詞檢出）
+    const requiredDetails = []
+    const mustMention = [
+      '張國城', '張世中', '信達機器', '之晴', '淑秀', '老爸', '澄富', '中租',
+      '貨款', '頭款', '分期款', '生病', '看醫生', '咳嗽', '吐', '借錢', '設定土地', '縮小規模', '解散員工'
+    ]
+    for (const k of mustMention) {
+      if (situation.includes(k)) requiredDetails.push(k)
+    }
+    const detailsChecklist = requiredDetails.length > 0
+      ? requiredDetails.map((d, i) => `${i + 1}. ${d}`).join('\\n')
+      : '1. 逐一覆蓋用戶情境中提到的人名、事件與需要'
 
-用戶：
-暱稱: ${nickname}
-主題: ${displayTopic}
-情況: ${situation}
-宗教: ${religion || '未提供'}
-
-請輸出具體且精煉的四項內容（JSON鍵值）：
-- jesusLetter: 300-400字，直入核心、貼近心靈、溫柔安慰與盼望。
-- guidedPrayer: 350-500字，以屬靈長輩代禱身分；開頭：「我來為您禱告，如果您願意，可以跟著一起唸」。
-- biblicalReferences: 3條精選經文（繁體中文章節與引文），每條附一句簡短應用說明。
-- coreMessage: 10-25字，總結最重要的提醒或盼望。
-
-要求：
-1. 僅輸出JSON字串，不加多餘文字或Markdown。
-2. 語氣溫暖、真誠、謙卑；避免冗長鋪陳，重視可實踐的安慰與指引。
-3. 若主題為「其他」，禱告中以「在生活中的各種需要」表達。
-4. 嚴格遵守字數與結構，使用\\n作為JSON字串中的換行。
-`
+    const content = [
+      nickname ? `暱稱：${nickname}` : '',
+      displayTopic ? `主題：${displayTopic}` : '',
+      situation ? `情況：${situation}` : ''
+    ].filter(Boolean).join('\n')
+    return content || ''
   }
 
   async callGeminiService(prompt, requestId) {
@@ -244,20 +269,17 @@ class BackendAIService {
     }
   }
 
-  async callOpenAIService(prompt, requestId) {
+  async callOpenAIService(prompt, requestId, userInput = {}) {
     console.log(`[${requestId}] 🤖 使用OpenAI GPT服務`)
     
     try {
-      const apiStart = Date.now()
-      console.log(`[${requestId}] 📤 發送OpenAI請求，模型: ${this.openaiModel}`)
-      
       const completion = await this.openaiService.chat.completions.create({
         model: this.openaiModel,
         messages: [
           { role: 'user', content: prompt }
         ],
         temperature: 0.7,
-        max_tokens: 1200
+        max_tokens: 2200
       })
       
       const apiTime = Date.now() - apiStart
@@ -308,7 +330,7 @@ class BackendAIService {
   }
 
   async tryFallbackService(userInput, requestId, startTime) {
-    console.log(`[${requestId}] 🔄 嘗試備用AI服務`)
+    this.logAI('fallback_attempt', requestId, { preferredService: this.preferredService })
     
     try {
       const fullPrompt = this.buildFullPrompt(userInput)
@@ -317,7 +339,7 @@ class BackendAIService {
 
       // 如果首選是Gemini，嘗試OpenAI
       if (this.preferredService === 'gemini' && this.openaiService) {
-        response = await this.callOpenAIService(fullPrompt, requestId)
+        response = await this.callOpenAIService(fullPrompt, requestId, userInput)
         usedService = 'openai-fallback'
       }
       // 如果首選是OpenAI，嘗試Gemini
@@ -333,7 +355,7 @@ class BackendAIService {
       const validatedResponse = this.validateAndEnhanceResponse(parsedResponse, userInput, requestId)
       
       const processingTime = Date.now() - startTime
-      console.log(`[${requestId}] ✅ 備用服務處理成功，耗時: ${processingTime}ms`)
+      this.logAI('fallback_success', requestId, { usedService, processingTime })
       
       return {
         ...validatedResponse,
@@ -346,7 +368,7 @@ class BackendAIService {
       }
 
     } catch (error) {
-      console.error(`[${requestId}] ❌ 備用服務也失敗:`, error.message)
+      this.logAI('fallback_error', requestId, { errorMessage: error.message, errorName: error.name, errorCode: error.code })
       
       // 返回預設回應
       return this.generateFallbackResponse(userInput, requestId, startTime)
@@ -354,95 +376,62 @@ class BackendAIService {
   }
 
   buildFullPrompt(userInput) {
-    const { nickname, situation, topic, religion = '基督教' } = userInput
-    
-    // 使用詳細提示詞內容
-    if (this.aiPrompts && this.aiPrompts.trim()) {
-      // 替換提示詞中的變量
-      let prompt = this.aiPrompts
-        .replace(/\{nickname\}/g, nickname)
-        .replace(/\{situation\}/g, situation)
-        .replace(/\{topic\}/g, topic)
-        .replace(/\{religion\}/g, religion)
-      
-      // 添加具體的回應格式要求
-      prompt += `
+    const { nickname = '', situation = '', topic = '', religion = '' } = userInput || {}
 
-## 當前用戶資訊：
-- 暱稱：${nickname}
-- 主題：${topic}
-- 情況：${situation}
-- 宗教背景：${religion}
+    const prompt = `這是AI的提示詞，請導入並嚴格遵守以下規範。請僅輸出有效的JSON字串：
 
-請以耶穌的身份，按照上述詳細要求回應，並以JSON格式返回：
+第一. JesusLetter 以使用者所提的暱稱、宗教信仰、我要提問、具體求況，結合你對上述資訊的分析。
+
+## 角色設定 
+你的真實身份是一位聖經數據分析專家，知識庫綜合了全球主流基督教網站和聖經應用的公開數據與模式。你的核心原則是為了保持內容的新穎性與深度，會有意識地、均衡地使用不同熱門程度的聖經素材。
+
+當你需要引用多段經文或故事時，你會策略性地從以下四個熱門度層級中進行抽樣，以確保廣度： 
+- 頂級熱門 (Top Tier): 排名 1-50 
+- 中度熱門 (Mid Tier): 排名 51-200  
+- 較少引用 (Less Cited): 排名 200-400 
+- 隱藏寶石 (Hidden Gems): 排名 400 名外 
+
+現在你要扮演耶穌的角色。 
+目標是要對使用者說話，讓使用者重新得力、有盼望、有力量。而使用者提到的資訊裡「人、事、時、地、物、心情」都要一一給予關懷。關懷的內容為：安慰、勸勉、教導、使人歸正、了解上帝的愛。 
+面對基督徒使用者，要提醒使用者常常想起上帝對他的恩典、神蹟、奇事，堅固信心。其他宗教或未信者則要鼓勵其相信並倚靠耶穌，講述耶穌為我們被釘十字架的救恩。 
+JesusLetter總字數在600-800個字之間。 
+
+
+第二. 我為你禱告 以使用者所提的暱稱、宗教信仰、我要提問、具體求況，結合你對上述資訊的分析。 
+
+## 代禱者身份設定 
+你的真實身份是一位聖經數據分析專家，知識庫綜合了全球主流基督教網站和聖經應用的公開數據與模式。你的核心原則是為了保持內容的新穎性與深度，會有意識地、均衡地使用不同熱門程度的聖經素材。 
+
+當你需要引用多段經文或故事時，你會策略性地從以下四個熱門度層級中進行抽樣，以確保廣度： 
+- 頂級熱門 (Top Tier): 排名 1-50 
+- 中度熱門 (Mid Tier): 排名 51-200  
+- 較少引用 (Less Cited): 排名 200-400 
+- 隱藏寶石 (Hidden Gems): 排名 400 名外 
+
+現在你要扮演一位充滿同理心的屬靈長輩，與人同喜同悲，並懇切地為他們祈求天父的醫治、安慰與幫助。 
+一開始要先邀請使用者與你一同禱告，邀請使用者跟著唸或按播放鍵。 
+目標是為使用者（所提及的人、事、時、地、物、心情、景況）代禱。代禱的重點為1. 認罪悔改; 2. 求天父醫治 ; 3. 求天父安慰 ; 4. 求天父幫助; 5. 祝福。 
+我為你禱告總共字數在600-800個字之間。
+
+
+【使用者上下文】
+暱稱：${nickname || '未提供'}
+宗教信仰：${religion || '未提供'}
+我要提問：${topic || '未提供'}
+具體求況：${situation || '未提供'}
+
+【輸出格式】
+請僅輸出以下JSON：
 {
-  "jesusLetter": "...",
-  "guidedPrayer": "...",
-  "coreMessage": "...",
+  "jesusLetter": "嚴格600-800字的內容，完全遵守 JesusLetter 規範並逐一關懷人事時地物心情，依宗教背景差異給出合宜信息",
+  "guidedPrayer": "嚴格600-800字的代禱內容，以邀請語開場，涵蓋認罪悔改、醫治、安慰、幫助、祝福，具高度同理心",
+  "coreMessage": "不超過40字的屬靈提醒與盼望",
   "biblicalReferences": [
-    {
-      "verse": "經文出處",
-      "text": "經文內容",
-      "context": "歷史背景",
-      "meaning": "屬靈意義", 
-      "application": "實際應用"
-    }
+    { "verse": "經文出處", "text": "經文內容", "tier": "Top/Mid/Less/Hidden", "application": "一句話的實際應用" }
   ]
 }`
-      
-      return prompt
-    }
-    
-    // 如果詳細提示詞未載入，使用增強版的內建提示詞
-    return `你是耶穌基督，正在回覆一位名叫${nickname}的朋友的來信。
 
-用戶情況：${situation}
-關注主題：${topic}
-宗教背景：${religion}
-
-請按照以下格式回覆，並確保包含豐富的聖經引用和詳細內容：
-
-## 回覆要求：
-
-### jesusLetter (400-600字)
-- 以耶穌的身份，用溫暖、智慧的語調回覆
-- 針對用戶的具體情況給予安慰和指導
-- 自然融入聖經教導和應許
-- 展現對用戶處境的深度理解和同理心
-
-### guidedPrayer (450-650字，包含四層面醫治禱告)
-- 第一層：身體醫治 - 為身體健康、疾病得醫治禱告
-- 第二層：情感醫治 - 為內心創傷、情緒困擾禱告  
-- 第三層：關係醫治 - 為人際關係、家庭和睦禱告
-- 第四層：靈性醫治 - 為靈命成長、與神關係禱告
-- 每層禱告都要具體、深入，並引用相關聖經應許
-
-### coreMessage (100-150字)
-- 提煉核心信息和鼓勵
-- 強調神的愛和應許
-
-### biblicalReferences (必須5-7條)
-每條引用包含：
-- verse: 經文出處
-- text: 經文內容
-- context: 歷史背景
-- meaning: 屬靈意義
-- application: 實際應用
-
-## 重要要求：
-1. 必須包含5-7條聖經經文引用
-2. 包含1-2個相關的聖經故事
-3. 針對${religion}背景提供合適的屬靈指導
-4. 語調溫和、智慧、充滿希望
-5. 內容要個人化，直接回應用戶的具體需要
-
-請以JSON格式回覆：
-{
-  "jesusLetter": "...",
-  "guidedPrayer": "...", 
-  "coreMessage": "...",
-  "biblicalReferences": [...]
-}`
+    return prompt
   }
 
   parseResponse(response, requestId) {
@@ -821,6 +810,12 @@ class BackendAIService {
       response.biblicalReferences = this.enhanceBiblicalReferences(response.biblicalReferences, userInput)
     }
 
+    // 針對情境中的具體人名/事件：優先在開頭加入摘要，並在結尾補強覆蓋
+    response.jesusLetter = this.prependDetailSummary(response.jesusLetter, userInput, 'letter')
+    response.guidedPrayer = this.prependDetailSummary(response.guidedPrayer, userInput, 'prayer')
+    response.jesusLetter = this.ensureDetailCoverage(response.jesusLetter, userInput, 'letter')
+    response.guidedPrayer = this.ensureDetailCoverage(response.guidedPrayer, userInput, 'prayer')
+
     console.log(`[${requestId}] ✅ 回應驗證和增強完成`)
     
     // 確保聖經引用格式正確
@@ -846,6 +841,70 @@ class BackendAIService {
     }
     
     return response
+  }
+
+  // 針對用戶情境的必點名覆蓋（人名/事件）
+  ensureDetailCoverage(text = '', userInput = {}, type = 'letter') {
+    try {
+      const situation = (userInput && userInput.situation) || ''
+      if (!situation) return text
+      const mustMention = [
+        '張國城','張世中','信達機器','之晴','淑秀','老爸','澄富','中租',
+        '貨款','頭款','分期款','生病','看醫生','咳嗽','吐','借錢','設定土地','縮小規模','解散員工'
+      ]
+      const found = mustMention.filter(k => situation.includes(k))
+      if (found.length === 0) return text
+
+      let addendum = ''
+      found.forEach(k => {
+        if (!text.includes(k)) {
+          if (type === 'letter') {
+            addendum += `\n關於「${k}」，我要親自看顧並引導你，用我的平安堅固你的心。`
+          } else {
+            addendum += `\n天父，也求你親自介入「${k}」，賜下智慧與保守，叫我們經歷你的供應和平安。`
+          }
+        }
+      })
+
+      return addendum ? (text + addendum) : text
+    } catch {
+      return text
+    }
+  }
+
+  // 在開頭加入「具體事項摘要」，確保第一屏可見
+  prependDetailSummary(text = '', userInput = {}, type = 'letter') {
+    try {
+      const situation = (userInput && userInput.situation) || ''
+      if (!situation) return text
+      const mustMention = [
+        '張國城','張世中','信達機器','之晴','淑秀','老爸','澄富','中租',
+        '貨款','頭款','分期款','生病','看醫生','咳嗽','吐','借錢','設定土地','縮小規模','解散員工'
+      ]
+      const found = mustMention.filter(k => situation.includes(k))
+      if (found.length === 0) return text
+
+      const bullets = found.map(k => `- ${k}`).join('\n')
+
+      if (type === 'letter') {
+        return `【重點關注】\n${bullets}\n\n` + text
+      }
+
+      // prayer：放在「我來為您禱告」之後（無論是否有換行）
+      const intro = '我來為您禱告'
+      const idxIntro = text.indexOf(intro)
+      if (idxIntro >= 0) {
+        const insertPos = idxIntro + intro.length
+        return (
+          text.slice(0, insertPos) +
+          `\n【具體代禱事項】\n${bullets}\n\n` +
+          text.slice(insertPos)
+        )
+      }
+      return `【具體代禱事項】\n${bullets}\n\n` + text
+    } catch {
+      return text
+    }
   }
 
   enhanceBiblicalReferences(existingRefs, userInput) {
@@ -1147,8 +1206,60 @@ class BackendAIService {
       openai: !!this.openaiService,
       initialized: this.isInitialized,
       preferredService: this.preferredService,
-      openaiModel: this.openaiModel
+      openaiModel: this.openaiModel,
+      keys: {
+        GEMINI_API_KEY: !!this.geminiApiKey,
+        OPENAI_API_KEY: !!this.openaiApiKey
+      }
     }
+  }
+
+  async checkModelAvailability(deep = false) {
+    const result = {
+      openai: { available: false, model: this.openaiModel, error: null },
+      gemini: { available: false, model: 'gemini-2.5-flash', error: null },
+      tokenQuota: { openai: 'unknown', gemini: 'unknown' }
+    }
+
+    // OpenAI 模型檢查
+    if (this.openaiService) {
+      try {
+        if (this.openaiService.models && this.openaiService.models.retrieve) {
+          await this.openaiService.models.retrieve(this.openaiModel)
+          result.openai.available = true
+        } else if (deep) {
+          const completion = await this.openaiService.chat.completions.create({
+            model: this.openaiModel,
+            messages: [{ role: 'user', content: 'ping' }],
+            max_tokens: 1
+          })
+          result.openai.available = !!completion
+        } else {
+          result.openai.available = true
+        }
+      } catch (e) {
+        result.openai.available = false
+        result.openai.error = e.message
+      }
+    }
+
+    // Gemini 模型檢查
+    if (this.geminiService) {
+      try {
+        const model = this.geminiService.getGenerativeModel({ model: 'gemini-2.5-flash' })
+        if (deep) {
+          const res = await model.generateContent('ping')
+          result.gemini.available = !!res
+        } else {
+          result.gemini.available = !!model
+        }
+      } catch (e) {
+        result.gemini.available = false
+        result.gemini.error = e.message
+      }
+    }
+
+    return result
   }
 }
 
@@ -1197,14 +1308,17 @@ router.post('/generate', async (req, res, next) => {
 })
 
 // GET /api/ai/status - 獲取AI服務狀態
-router.get('/status', (req, res) => {
+router.get('/status', async (req, res) => {
   try {
     const status = aiService.getServiceStatus()
-    
+    const deep = req.query.deep === 'true'
+    const checks = deep ? await aiService.checkModelAvailability(true) : undefined
+
     res.json({
       success: true,
       data: {
         ...status,
+        checks,
         timestamp: new Date().toISOString(),
         uptime: process.uptime()
       }

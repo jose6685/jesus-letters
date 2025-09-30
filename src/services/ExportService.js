@@ -9,6 +9,30 @@ class ExportService {
     this.supportedFormats = ['txt', 'html', 'docx', 'json']
   }
 
+  // 將不同資料形狀標準化為同一介面
+  normalizeLetter(letter) {
+    const userInput = letter.userInput || {
+      nickname: letter.nickname,
+      topic: letter.topic,
+      situation: letter.situation
+    }
+
+    const aiResponse = letter.aiResponse || {
+      jesusLetter: letter.jesusLetter,
+      guidedPrayer: letter.guidedPrayer,
+      biblicalReferences: letter.biblicalReferences,
+      coreMessage: letter.coreMessage
+    }
+
+    return {
+      id: letter.id,
+      timestamp: letter.timestamp,
+      userInput,
+      aiResponse,
+      metadata: letter.metadata
+    }
+  }
+
   /**
    * 匯出單個對話記錄
    * @param {Object} letter - 對話記錄
@@ -75,15 +99,16 @@ class ExportService {
     
     // 添加標題
     lines.push('耶穌的信 - 對話記錄')
-    lines.push('=' * 50)
+    lines.push('='.repeat(50))
     lines.push(`匯出時間: ${new Date().toLocaleString('zh-TW')}`)
     lines.push(`記錄數量: ${letters.length}`)
     lines.push('')
 
     // 添加每個對話記錄
-    letters.forEach((letter, index) => {
+    letters.forEach((rawLetter, index) => {
+      const letter = this.normalizeLetter(rawLetter)
       lines.push(`記錄 ${index + 1}`)
-      lines.push('-' * 30)
+      lines.push('-'.repeat(30))
       lines.push(`日期: ${new Date(letter.timestamp).toLocaleString('zh-TW')}`)
       lines.push(`暱稱: ${letter.userInput.nickname || '未提供'}`)
       lines.push(`主題: ${letter.userInput.topic || '未提供'}`)
@@ -112,7 +137,7 @@ class ExportService {
       lines.push('核心信息:')
       lines.push(letter.aiResponse.coreMessage || '無')
       lines.push('')
-      lines.push('=' * 50)
+      lines.push('='.repeat(50))
       lines.push('')
     })
 
@@ -250,7 +275,9 @@ class ExportService {
         <p>匯出時間: ${new Date().toLocaleString('zh-TW')} | 記錄數量: ${letters.length}</p>
     </div>
 
-    ${letters.map((letter, index) => `
+    ${letters.map((rawLetter, index) => {
+      const letter = this.normalizeLetter(rawLetter)
+      return `
     <div class="letter-card">
         <div class="letter-header">
             <div class="letter-meta">
@@ -299,7 +326,8 @@ class ExportService {
             </div>
         </div>
     </div>
-    `).join('')}
+    `
+    }).join('')}
 
     <div class="footer">
         <p>願神的愛與平安與你同在 ❤️</p>
@@ -353,7 +381,8 @@ class ExportService {
     )
 
     // 添加每個對話記錄
-    letters.forEach((letter, index) => {
+    letters.forEach((rawLetter, index) => {
+      const letter = this.normalizeLetter(rawLetter)
       // 記錄標題
       children.push(
         new Paragraph({
@@ -517,13 +546,16 @@ class ExportService {
       version: '3.0',
       exportDate: new Date().toISOString(),
       recordCount: letters.length,
-      letters: letters.map(letter => ({
-        id: letter.id,
-        timestamp: letter.timestamp,
-        userInput: letter.userInput,
-        aiResponse: letter.aiResponse,
-        metadata: letter.metadata
-      }))
+      letters: letters.map(rawLetter => {
+        const letter = this.normalizeLetter(rawLetter)
+        return {
+          id: letter.id,
+          timestamp: letter.timestamp,
+          userInput: letter.userInput,
+          aiResponse: letter.aiResponse,
+          metadata: letter.metadata
+        }
+      })
     }
 
     return JSON.stringify(exportData, null, 2)
