@@ -40,20 +40,26 @@ app.use(helmet({
 // CORS配置（支援以環境變數 ALLOWED_ORIGINS 覆蓋生產環境允許來源，逗號分隔）
 const allowedOriginsEnv = process.env.ALLOWED_ORIGINS
 const defaultProdOrigins = [
-  'https://your-domain.com', 
+  'https://your-domain.com',
   'https://your-app.netlify.app',
-  'https://jesus-letters-3-tb724zmns-jose6685-6249s-projects.vercel.app',
+  // 固定主分支別名
   'https://jesus-letters-3-git-main-jose6685-6249s-projects.vercel.app'
 ]
+// 允許動態的 Vercel 預覽子網域（每次部署都會變更）
+const allowedOriginPatterns = [
+  /^https:\/\/jesus-letters-3-.*-jose6685-6249s-projects\.vercel\.app$/
+]
+
 const devOrigins = [
-  'http://localhost:5173', 
-  'http://127.0.0.1:5173', 
-  'http://localhost:3000', 
-  'http://localhost:3001', 
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:3000',
+  'http://localhost:3001',
   'http://localhost:4173',
-  'https://jesus-letters-3-tb724zmns-jose6685-6249s-projects.vercel.app',
+  // 方便本地測試預覽子網域
   'https://jesus-letters-3-git-main-jose6685-6249s-projects.vercel.app'
 ]
+
 const allowedOrigins = process.env.NODE_ENV === 'production'
   ? (allowedOriginsEnv ? allowedOriginsEnv.split(',').map(s => s.trim()).filter(Boolean) : defaultProdOrigins)
   : devOrigins
@@ -62,7 +68,10 @@ const corsOptions = {
   origin: (origin, callback) => {
     // 允許無來源（如同源或非瀏覽器請求）
     if (!origin) return callback(null, true)
+    // 精準白名單比對
     if (allowedOrigins.includes(origin)) return callback(null, true)
+    // 動態預覽子網域比對
+    if (allowedOriginPatterns.some((re) => re.test(origin))) return callback(null, true)
     return callback(new Error(`Not allowed by CORS: ${origin}`))
   },
   credentials: true,
