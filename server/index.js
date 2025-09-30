@@ -1,6 +1,6 @@
 import app from './app.js'
 
-const PORT = process.env.PORT || 3002
+const PORT = process.env.PORT || 3003
 const HOST = process.env.HOST || '0.0.0.0'
 
 // 啟動伺服器（綁定至明確主機，避免本機連線問題）

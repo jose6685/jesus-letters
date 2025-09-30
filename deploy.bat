@@ -1,79 +1,82 @@
 @echo off
 setlocal enabledelayedexpansion
+chcp 65001 >nul
 
-echo 🚀 Starting JesusLetter deployment...
+echo [INFO] Starting JesusLetter Docker redeploy...
 
-REM Check if Docker is running
+REM Ensure we run from the script directory
+pushd %~dp0
+
+REM Check if Docker daemon is running
 docker info >nul 2>&1
 if errorlevel 1 (
-    echo ❌ Docker is not running. Please start Docker and try again.
+    echo [ERROR] Docker is not running. Please start Docker Desktop and retry.
+    popd
     exit /b 1
 )
 
-REM Check if docker-compose is available
-docker-compose --version >nul 2>&1
+REM Determine Docker Compose command (prefer v2: 'docker compose')
+set "DC_CMD=docker compose"
+%DC_CMD% version >nul 2>&1
 if errorlevel 1 (
-    echo ❌ docker-compose is not installed. Please install docker-compose and try again.
-    exit /b 1
+    docker-compose --version >nul 2>&1
+    if errorlevel 1 (
+        echo [ERROR] Docker Compose is not available. Install Docker Compose v2 or v1.
+        popd
+        exit /b 1
+    ) else (
+        set "DC_CMD=docker-compose"
+    )
 )
 
-REM Create .env file if it doesn't exist
-if not exist .env (
-    echo 📝 Creating .env file...
-    (
-        echo # Application Configuration
-        echo APP_NAME=JesusLetter
-        echo APP_VERSION=1.0.0
+REM Create .env file if it doesn't exist (minimal defaults)
+if not exist ".env" (
+    echo [INFO] Creating .env with defaults...
+    > ".env" (
         echo NODE_ENV=production
         echo PORT=3001
-        echo.
-        echo # AI Service API Keys ^(Please update with your actual keys^)
-        echo GEMINI_API_KEY=your-gemini-api-key-here
-        echo OPENAI_API_KEY=your-openai-api-key-here
-        echo.
-        echo # Server Configuration
         echo CORS_ORIGIN=http://localhost:3000
-        echo JWT_SECRET=your-jwt-secret-key-here
-        echo.
-        echo # Rate Limiting
+        echo JWT_SECRET=replace-me
+        echo GEMINI_API_KEY=
+        echo OPENAI_API_KEY=
         echo RATE_LIMIT_WINDOW_MS=900000
         echo RATE_LIMIT_MAX_REQUESTS=100
-        echo.
-        echo # Logging
         echo LOG_LEVEL=info
-        echo.
-        echo # Frontend Configuration
         echo VITE_API_BASE_URL=http://localhost:3001/api
-        echo VITE_APP_NAME=JesusLetter
-        echo VITE_APP_VERSION=1.0.0
-    ) > .env
-    echo ⚠️  Please update the API keys in .env file before running the application
+    )
+    echo [WARN] Update API keys in .env before production use.
 )
 
-REM Stop existing containers
-echo 🛑 Stopping existing containers...
-docker-compose down --remove-orphans
+echo [INFO] Stopping existing containers...
+%DC_CMD% down --remove-orphans
 
-REM Build and start containers
-echo 🔨 Building and starting containers...
-docker-compose up --build -d
+echo [INFO] Building images...
+%DC_CMD% build
 
-REM Wait for services to be ready
-echo ⏳ Waiting for services to be ready...
-timeout /t 10 /nobreak >nul
-
-REM Check if services are running
-docker-compose ps | findstr "Up" >nul
+echo [INFO] Starting services in detached mode...
+%DC_CMD% up -d
 if errorlevel 1 (
-    echo ❌ Deployment failed. Check logs with: docker-compose logs
+    echo [ERROR] docker compose up failed. Showing last 100 lines of logs:
+    %DC_CMD% logs --tail=100
+    popd
     exit /b 1
-) else (
-    echo ✅ Deployment successful!
-    echo.
-    echo 🌐 Frontend: http://localhost:3000
-    echo 🔧 Backend API: http://localhost:3001/api
-    echo ❤️  Health Check: http://localhost:3001/api/health
-    echo.
-    echo 📋 To view logs: docker-compose logs -f
-    echo 🛑 To stop: docker-compose down
 )
+
+echo [INFO] Waiting for backend health...
+set "HEALTH_URL=http://localhost:3001/api/health"
+for /l %%i in (1,1,30) do (
+    powershell -NoProfile -Command "try { $r = Invoke-RestMethod -Uri '%HEALTH_URL%' -TimeoutSec 2; if ($r.status -eq 'healthy') { exit 0 } else { exit 1 } } catch { exit 1 }"
+    if not errorlevel 1 (
+        echo [OK] Backend healthy at %HEALTH_URL%
+        goto done
+    )
+    timeout /t 2 >nul
+)
+
+echo [WARN] Health check timed out. You can inspect logs via: %DC_CMD% logs -f
+
+:done
+echo [INFO] Frontend: http://localhost:3000/
+echo [INFO] Backend:  %HEALTH_URL%
+popd
+exit /b 0
