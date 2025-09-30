@@ -1271,14 +1271,31 @@ router.post('/generate', async (req, res, next) => {
   try {
     const { userInput } = req.body
 
-    // 驗證必要欄位
-    if (!userInput || !userInput.nickname || !userInput.situation || !userInput.topic) {
+    // 驗證必要欄位與型別
+    if (!userInput || typeof userInput !== 'object') {
       return res.status(400).json({
         error: '缺少必要欄位',
         required: ['nickname', 'situation', 'topic'],
+        received: userInput === null ? null : typeof userInput,
+        message: 'userInput 應為物件，且需包含必要欄位'
+      })
+    }
+
+    const requiredFields = ['nickname', 'situation', 'topic']
+    const missing = requiredFields.filter(k => typeof userInput[k] !== 'string' || userInput[k].trim().length === 0)
+    if (missing.length > 0) {
+      return res.status(400).json({
+        error: '缺少必要欄位',
+        required: requiredFields,
+        missing,
         received: Object.keys(userInput || {})
       })
     }
+
+    // 進一步清理輸入
+    userInput.nickname = userInput.nickname.trim()
+    userInput.topic = userInput.topic.trim()
+    userInput.situation = userInput.situation.trim()
 
     // 驗證內容長度
     if (userInput.situation.length > 2000) {

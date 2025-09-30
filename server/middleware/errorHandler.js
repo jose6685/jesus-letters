@@ -26,8 +26,13 @@ export function notFoundHandler(req, res, next) {
  * 全局錯誤處理器
  */
 export function globalErrorHandler(err, req, res, next) {
+  // 若回應已發送，交給下一個錯誤處理器避免重複回應
+  if (res.headersSent) {
+    return next(err)
+  }
+
   // 設置默認錯誤狀態碼
-  const statusCode = err.status || err.statusCode || 500
+  let statusCode = err.status || err.statusCode || 500
   const errorCode = err.code || 'INTERNAL_ERROR'
   
   // 記錄錯誤日誌
@@ -42,9 +47,10 @@ export function globalErrorHandler(err, req, res, next) {
   })
 
   // 根據錯誤類型處理
+  const isClientError = statusCode >= 400 && statusCode < 500
   let errorResponse = {
-    error: '服務器內部錯誤',
-    message: err.message || '發生未知錯誤',
+    error: isClientError ? '請求錯誤' : '服務器內部錯誤',
+    message: err.message || (isClientError ? '請求不合法' : '發生未知錯誤'),
     code: errorCode,
     timestamp: new Date().toISOString(),
     requestId: req.id || generateRequestId()
@@ -94,9 +100,11 @@ export function globalErrorHandler(err, req, res, next) {
       break
 
     default:
-      // 生產環境不暴露詳細錯誤信息
+      // 生產環境：僅對 5xx 隱藏細節；4xx 保留具體訊息
       if (process.env.NODE_ENV === 'production') {
-        errorResponse.message = '服務器內部錯誤，請稍後再試'
+        if (!isClientError) {
+          errorResponse.message = '服務器內部錯誤，請稍後再試'
+        }
         delete errorResponse.stack
       } else {
         errorResponse.stack = err.stack
@@ -112,6 +120,7 @@ export function globalErrorHandler(err, req, res, next) {
   if (err.name === 'ValidationError') {
     statusCode = 400
     errorResponse.error = '輸入驗證失敗'
+    errorResponse.message = err.message || '請求參數驗證失敗'
     errorResponse.details = Object.values(err.errors || {}).map(e => e.message)
   }
 
